@@ -1,43 +1,189 @@
-# Azamuku V2 (modified)
+# Azamuku v2
 
-Short description
+A Python-based C2 (Command and Control) server with support for HTTP/HTTPS, tunneling (ngrok, localtunnel), and payload generation.
 
-This repository contains a modified fork of an existing project that I adapted into a Hoaxshell-like tool. I am not the original author — I forked and modified the project to explore and prototype features. This README does not provide step-by-step instructions for deploying or using potentially harmful capabilities.
+**Authors:**
 
-**Purpose**
+- [otter](https://github.com/whatotter)
+- Supported by [Fan2K](https://github.com/Christian93111)
 
-- Provide a high-level record of the repository and the changes I made.
-- Preserve attribution to the original project and its authors.
-- Clarify structure while avoiding operational guidance that could enable misuse.
+**Credits & Inspiration:**
 
-**What I changed / Notes**
+- Based on the original [Azamuku](https://github.com/whatotter/azamuku) repository.
+- Inspired by [HoaxShell](https://github.com/t3l3machus/hoaxshell).
 
-- This fork adapts parts of the original project toward a Hoaxshell-like workflow and payload templates.
-- I focused modifications in the `core/`, `masks/`, and `payloads/` subfolders.
+## **DISCLAIMERS**
 
+- **_Please don't use this in real world attacks. This was made for educational purposes and I'd like to keep it that way. I'm also not responsible of what you do with this tool - you are responsible of your own actions._**
+- This isn't meant to be "best reverse shell ever!!!" This was just a little project to teach me more about AMSI, powershell, and windows defender, that turned out to be an actual pretty cool tool.
+- This isn't foolproof.
+- HTTPS doesn't really work perfectly, but it's not expected of you to use it anyways.
+- It's **highly** recommended to create/obfuscate the payload - Microsoft does crawl github to find payloads, and it's highly likely it's found the one here.
 
-**Repository structure (high-level)**
+## Features
 
-- `original_README.md` — original author README
-- `azamuku.py` — top-level launcher / helper script (project-specific)
-- `core/` — server and mask HTML templates (server components and masks)
-- `payloads/` — payload templates and tunnel/hotplug lists
-- `MASKS.md` — documentation or notes about masks
-- `requirements.txt` — Python requirements for components in this repo
+- **HTTP & HTTPS Server:** Easily host your C2 server on HTTP or HTTPS.
+- **Tunneling Support:** Built-in support for `ngrok` and `localtunnel` to expose your local server to the internet.
+- **Payload Generation:** Automatically generate payloads for your specific configuration (HTTP, HTTPS, Tunnels).
+- **Interactive Shell:** Drop into a shell on connected victims.
+- **Session Management:** View connected victims, remove sessions, and manage authorizations.
+- **Multi-Client Execution:** Run commands on multiple selected victims simultaneously.
+- **Stager Support:** Execute a sequence of commands from a file upon connection.
+- **Strict Mode:** Disable initial information gathering for stealth.
 
+## How does it work?
 
-**Security & Responsible Use**
+Azamuku is a reverse shell that aims to bypass Windows Defender, AMSI, and even Malwarebytes. It is designed to look like normal traffic to sysadmins inspecting LAN/WAN traffic due to alternating endpoints and HTML-wrapped commands.
 
-This project contains dual-use tooling. It may be used for legitimate research, testing, or education, but it can also be misused. Do not use this software for any activity that violates laws, terms of service, or privacy of others.
+**Flow:**
 
-If you are using this repository for research or defensive work, follow these rules:
+1.  The victim connects to the implementation.
+2.  The implementation checks the command pool for commands.
+3.  The HTML response when checking the command pool is an HTML file from `./core/masks/html`, with a replaced tag - these are called **masks**.
+4.  Once it receives and parses the command from the mask, it runs the command.
+5.  It POSTs the output to a random endpoint from `./core/masks/endpoints.txt`, which the server automatically receives and saves.
 
-- Only test on systems and networks for which you have explicit permission.
-- Use safe, isolated lab environments for experiments.
-- Respect applicable laws and institutional policies.
+It uses HTTP GET requests to beacon and HTTP POST requests to send data.
 
-**Attribution**
+### What's a Mask?
 
-This project is derived from work by the original author @whatotter (https://github.com/whatotter) — I forked and modified project. I am inspired by and thankful to the original author; this repository is my derivative work.
+A "mask" in this situation is an HTML file (could be literally anything actually) with a specific HTML comment tag:
 
-Original Repo: https://github.com/whatotter/azamuku
+```html
+<!--%()%-->
+```
+
+The Azamuku manager will automatically replace `%()%` with the encoded command for the victim to parse.
+
+**Where do I get a mask?**
+Literally anywhere. A good way of making some is:
+
+1.  Open the site you want to turn into a mask.
+2.  Right click -> View Source.
+3.  Copy and paste everything into a new file under `./core/masks/html/` (ex: `google.html`).
+4.  Paste it in that file, find somewhere to make a comment, paste the tag `<!--%()%-->`.
+5.  Enjoy.
+
+A mask could literally just be:
+
+```html
+<!DOCTYPE html>
+<html>
+  <body>
+    <h1>My First Heading</h1>
+    <p>My first paragraph.</p>
+
+    <!--%()%-->
+    < heres the comment tag
+  </body>
+</html>
+```
+
+The payload will automatically figure out which comment is correct (usually), so you can use any HTML content.
+
+## Requirements
+
+- Python 3
+- `prettytable`
+- `openssl` (optional, for generating self-signed certificates)
+- `ngrok` (optional, for tunneling)
+- `localtunnel` (optional, for tunneling)
+
+## Installation
+
+1. Clone the repository.
+   ```bash
+   git clone https://github.com/Christian93111/azamuku-v2.git && cd azamuku-v2
+   ```
+2. Install the required Python packages:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Make executable (Linux):
+   ```bash
+   chmod +x azamuku.py
+   ```
+
+## Usage
+
+Start the server using `python3 azamuku.py`. You can configure it using the following arguments:
+
+### Command Line Arguments
+
+| Argument               | Description                                              | Default        |
+| :--------------------- | :------------------------------------------------------- | :------------- |
+| `-s`, `--server`       | IP to bind the HTTP(s) server to                         | `0.0.0.0`      |
+| `--http-port`          | Port to bind the HTTP server to                          | `8080`         |
+| `--https-port`         | Port to bind the HTTPS server to                         | `0` (Disabled) |
+| `--certfile`           | Certificate file for HTTPS                               | `server.pem`   |
+| `--keyfile`            | Key file for HTTPS                                       | `key.pem`      |
+| `--stager`             | A text file containing commands to execute on connection | `None`         |
+| `--strict`             | Disable information gathering commands                   | `False`        |
+| `-lt`, `--localtunnel` | Use localtunnel for tunneling                            | `False`        |
+| `-ng`, `--ngrok`       | Use ngrok for tunneling                                  | `False`        |
+
+**Examples:**
+
+```bash
+# Start with default settings
+python3 azamuku.py
+
+# Start with HTTPS on port 443
+python3 azamuku.py --https-port 443
+
+# Start with ngrok tunneling
+python3 azamuku.py --ngrok
+```
+
+### Advanced Usage Tips
+
+**Using HTTPS:**
+If certificate files don't exist, Azamuku will ask if you'd like to make them using openssl.
+
+```bash
+python3 azamuku.py --certfile cert.pem --keyfile key.pem
+```
+
+**Stager/Autorun Commands:**
+You can load a list of commands to run automatically:
+
+```bash
+python3 azamuku.py --stager script.txt
+```
+
+**With Domain Name:**
+You don't need to do anything special here. When you generate the payload, just set it as your domain instead of your IP.
+
+```bash
+python3 azamuku.py -s 0.0.0.0 --http-port 80
+[azamuku]> payload example.com 80
+```
+
+## Interactive Console Commands
+
+Once the server is running, you can use the following commands in the Azamuku console:
+
+| Command         | Arguments               | Description                                                                                                                                                                                                 |
+| :-------------- | :---------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `help`          | None                    | Displays the help menu with a list of commands.                                                                                                                                                             |
+| `clear`         | None                    | Clears the terminal screen.                                                                                                                                                                                 |
+| `info`          | None                    | Shows a table of all connected victims with their UIDs, IP addresses, Hostnames, and Status.                                                                                                                |
+| `shell`         | `<uid>`                 | Opens an interactive shell session with the specified victim. <br> **Example:** `shell 12345`                                                                                                               |
+| `payload`       | `[ip] [port]`           | Generates a payload script. If a tunnel is active (ngrok/localtunnel), it will automatically use the tunnel URL. Otherwise, you must provide the IP and Port. <br> **Example:** `payload 192.168.1.10 8080` |
+| `allow`         | `<uid>` or `<filename>` | Authorizes a specific UID or imports a list of UIDs from a file. Allowed UIDs can connect back to the server. <br> **Example:** `allow 12345` or `allow old_sessions.txt`                                   |
+| `grab`          | None                    | Toggles "grabbing" mode. When enabled, the server will accept connections from ANY UID, even if not explicitly authorized (useful for reconnecting lost sessions).                                          |
+| `export`        | `<filename>`            | Saves the current list of authorized UIDs to a file. <br> **Example:** `export sessions.txt`                                                                                                                |
+| `wait`          | None                    | Waits for the next new connection and automatically drops you into a shell for that victim.                                                                                                                 |
+| `rm`            | `<uid>`                 | Removes a victim from the session list and de-authorizes their UID. <br> **Example:** `rm 12345`                                                                                                            |
+| `select`        | `<uid>` or `*`          | Toggles selection of a UID for multi-execution. Use `*` to select/deselect all currently connected victims. <br> **Example:** `select 12345` or `select *`                                                  |
+| `multirun`      | `<command>`             | Executes a shell command on all currently _selected_ victims. <br> **Example:** `multirun whoami`                                                                                                           |
+| `exit` / `quit` | None                    | Terminates the server and all active connections.                                                                                                                                                           |
+
+## Limits
+
+- **No True Interactive Shells:** Since this is HTTP-based, it is not a true interactive shell (like SSH or Netcat). It polls for commands.
+- **Latency:** There might be a delay depending on the beacon interval.
+
+## Contributing
+
+Contributions are welcome! If you contribute, please ensure you don't break existing features and keep the code readable.
