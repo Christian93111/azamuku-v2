@@ -85,9 +85,9 @@ The payload will automatically figure out which comment is correct (usually), so
 
 - Python 3
 - `prettytable`
-- `openssl` (optional, for generating self-signed certificates)
-- `ngrok` (optional, for tunneling)
-- `localtunnel` (optional, for tunneling)
+- `openssl`
+- `ngrok`
+- `localtunnel`
 
 ## Installation
 
