@@ -121,6 +121,7 @@ Start the server using `python3 azamuku.py`. You can configure it using the foll
 | `--strict`             | Disable information gathering commands                   | `False`        |
 | `-lt`, `--localtunnel` | Use localtunnel for tunneling                            | `False`        |
 | `-ng`, `--ngrok`       | Use ngrok for tunneling                                  | `False`        |
+| `-b64`, `--base64`     | Use base64 encoding for payload                          | `False`        |
 
 **Examples:**
 
@@ -133,6 +134,9 @@ python3 azamuku.py --https-port 443
 
 # Start with ngrok tunneling
 python3 azamuku.py --ngrok
+
+# Start with ngrok tunneling and base64 encoding
+python3 azamuku.py --ngrok --base64
 ```
 
 ### Advanced Usage Tips
@@ -178,6 +182,7 @@ Once the server is running, you can use the following commands in the Azamuku co
 | `select`        | `<uid>` or `*`          | Toggles selection of a UID for multi-execution. Use `*` to select/deselect all currently connected victims. <br> **Example:** `select 12345` or `select *`                                                  |
 | `multirun`      | `<command>`             | Executes a shell command on all currently _selected_ victims. <br> **Example:** `multirun whoami`                                                                                                           |
 | `exit` / `quit` | None                    | Terminates the server and all active connections.                                                                                                                                                           |
+| `base64`        | None                    | Toggles base64 encoding for payload                                                                                                                                                                         |
 
 ## Limits
 
