@@ -160,7 +160,7 @@ You don't need to do anything special here. When you generate the payload, just 
 
 ```bash
 python3 azamuku.py -s 0.0.0.0 --http-port 80
-[azamuku]> payload example.com 80
+[azamuku v2]> payload example.com 80
 ```
 
 ## Interactive Console Commands
