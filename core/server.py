@@ -298,7 +298,9 @@ class azamuku:
 
     def _run_https(self, ip, server_class=ThreadingHTTPServer, handler_class=azamukuHandler, port=443, certfile='server.pem', keyfile='key.pem'):
         httpd = server_class((ip, port), handler_class)
-        httpd.socket = ssl.wrap_socket(httpd.socket, certfile=certfile, keyfile=keyfile, server_side=True)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=certfile, keyfile=keyfile)
+        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
 
         self.httpsServer = httpd
         httpd.serve_forever()
