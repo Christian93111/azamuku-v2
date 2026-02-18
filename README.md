@@ -85,9 +85,9 @@ The payload will automatically figure out which comment is correct (usually), so
 
 - Python 3
 - `prettytable`
-- `openssl` (optional, for generating self-signed certificates)
-- `ngrok` (optional, for tunneling)
-- `localtunnel` (optional, for tunneling)
+- `openssl`
+- `ngrok`
+- `localtunnel`
 
 ## Installation
 
@@ -183,7 +183,3 @@ Once the server is running, you can use the following commands in the Azamuku co
 
 - **No True Interactive Shells:** Since this is HTTP-based, it is not a true interactive shell (like SSH or Netcat). It polls for commands.
 - **Latency:** There might be a delay depending on the beacon interval.
-
-## Contributing
-
-Contributions are welcome! If you contribute, please ensure you don't break existing features and keep the code readable.
