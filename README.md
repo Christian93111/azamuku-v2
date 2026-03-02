@@ -118,6 +118,7 @@ Start the server using `python3 azamuku.py`. You can configure it using the foll
 | `--certfile`           | Certificate file for HTTPS                               | `server.pem`   |
 | `--keyfile`            | Key file for HTTPS                                       | `key.pem`      |
 | `--stager`             | A text file containing commands to execute on connection | `None`         |
+| `--camera`             | Enable camera mode                                       | `False`        |
 | `--strict`             | Disable information gathering commands                   | `False`        |
 | `-lt`, `--localtunnel` | Use localtunnel for tunneling                            | `False`        |
 | `-ng`, `--ngrok`       | Use ngrok for tunneling                                  | `False`        |
