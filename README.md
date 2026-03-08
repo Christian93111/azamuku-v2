@@ -4,13 +4,16 @@ A Python-based C2 (Command and Control) server with support for HTTP/HTTPS, tunn
 
 **Authors:**
 
-- [otter](https://github.com/whatotter)
+- Original Creator [otter](https://github.com/whatotter)
 - Supported by [Fan2K](https://github.com/Christian93111)
 
 **Credits & Inspiration:**
 
 - Based on the original [Azamuku](https://github.com/whatotter/azamuku) repository.
 - Inspired by [HoaxShell](https://github.com/t3l3machus/hoaxshell).
+
+# Screenshot
+![Azamuku v2 Screenshot](https://raw.githubusercontent.com/Christian93111/azamuku-v2/refs/heads/main/screenshot/image.png)
 
 ## **DISCLAIMERS**
 
@@ -88,6 +91,7 @@ The payload will automatically figure out which comment is correct (usually), so
 - `openssl`
 - `ngrok`
 - `localtunnel`
+- `opencv-python`
 
 ## Installation
 
@@ -191,7 +195,7 @@ Once the server is running, you can use the following commands in the Azamuku co
 | `allow`         | `<uid>` or `<filename>` | Authorizes a specific UID or imports a list of UIDs from a file. Allowed UIDs can connect back to the server. <br> **Example:** `allow 12345` or `allow old_sessions.txt`                                   |
 | `grab`          | None                    | Toggles "grabbing" mode. When enabled, the server will accept connections from ANY UID, even if not explicitly authorized (useful for reconnecting lost sessions).                                          |
 | `export`        | `<filename>`            | Saves the current list of authorized UIDs to a file. <br> **Example:** `export sessions.txt`                                                                                                                |
-| `camera`        | `<uid>`                 | Takes a picture of the victim. <br> **Example:** `camera 12345`                                                                                                                                             |
+| `camera`        | `<uid>`                 | Takes a picture of the victim frame by frame. <br> **Example:** `camera 12345`                                                                                                                                             |
 | `wait`          | None                    | Waits for the next new connection and automatically drops you into a shell for that victim.                                                                                                                 |
 | `rm`            | `<uid>`                 | Removes a victim from the session list and de-authorizes their UID. <br> **Example:** `rm 12345`                                                                                                            |
 | `select`        | `<uid>` or `*`          | Toggles selection of a UID for multi-execution. Use `*` to select/deselect all currently connected victims. <br> **Example:** `select 12345` or `select *`                                                  |
